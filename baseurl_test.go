@@ -1,25 +1,69 @@
 package baseurl
 
 import (
+	"crypto/tls"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestBaseURL(t *testing.T) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, BaseUrl(r))
-	}
-	req, err := http.NewRequest("GET", "https://example.com/foo", nil)
+var testHTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, BaseUrl(r)) })
+
+func TestHTTP(t *testing.T) {
+	ts := httptest.NewServer(testHTTPHandler)
+	defer ts.Close()
+
+	res, err := http.Get(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := httptest.NewRecorder()
-	handler(w, req)
-	str := w.Body.String()
-	if str != `https://example.com` {
-		t.Fatalf(`failed to get BaseUrl: expect: '%s', got: '%s'`, `https://example.com`, str)
+	data, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != ts.URL {
+		t.Fatalf(`failed to get BaseUrl:
+	expect:	%v
+	got:	%v`, ts.URL, string(data))
+	}
+}
+
+func TestHTTPS(t *testing.T) {
+	ts := httptest.NewTLSServer(testHTTPHandler)
+	defer ts.Close()
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+
+	client := &http.Client{Transport: tr}
+
+	res, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != ts.URL {
+		t.Fatalf(`failed to get BaseUrl:
+	expect:	%v
+	got:	%v`, ts.URL, string(data))
+	}
+
+	if !strings.HasPrefix(string(data), `https://`) {
+		t.Fatal(`this url is not https://`)
 	}
 }
